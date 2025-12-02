@@ -1,44 +1,85 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 import firebase_admin
-from firebase_admin import credentials, messaging
-import os
+from firebase_admin import credentials, messaging, db
+import threading
 import json
+import os
 
 app = FastAPI()
 
-# Load service account JSON from environment variable
-service_account_json = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
-if not service_account_json:
-    raise ValueError("GOOGLE_APPLICATION_CREDENTIALS_JSON environment variable not set.")
+# إعداد Firebase
+cred_json = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
+cred = credentials.Certificate(json.loads(cred_json))
+firebase_admin.initialize_app(cred, {
+    "databaseURL": "https://naqesnarabie-default-rtdb.europe-west1.firebasedatabase.app/"
+})
 
-service_account_data = json.loads(service_account_json)
-
-cred = credentials.Certificate(service_account_data)
-firebase_admin.initialize_app(cred)
-
-@app.get("/")
-def home():
-    return {"status": "FCM server running"}
-
-# Pydantic model for JSON body
-class Notification(BaseModel):
-    token: str
+# نموذج بيانات الإشعار
+class NotificationRequest(BaseModel):
+    user_id: str
     title: str
     body: str
+    req_id: str
 
-@app.post("/send")
-async def send_notification(notification: Notification):
-    try:
-        message = messaging.Message(
-            notification=messaging.Notification(
-                title=notification.title,
-                body=notification.body
-            ),
-            token=notification.token
-        )
+# Endpoint اختياري لإرسال إشعار يدوي
+@app.post("/send_event_notification")
+async def send_event_notification(req: NotificationRequest):
+    token = db.reference(f"players/{req.user_id}/token").get()
+    if not token:
+        return {"success": False, "error": "Token not found"}
 
-        response = messaging.send(message)
-        return {"success": True, "response": response}
-    except Exception as e:
-        return {"success": False, "error": str(e)}
+    message = messaging.Message(
+        notification=messaging.Notification(title=req.title, body=req.body),
+        token=token,
+        data={"reqId": req.req_id}
+    )
+    message_id = messaging.send(message)
+    return {"success": True, "message_id": message_id}
+
+# مراقبة الطلبات الجديدة أو التغييرات
+def monitor_requests():
+    ref = db.reference("/Requests/room")
+
+    def listener(event):
+        snapshot = event.data
+        if not snapshot:
+            return
+
+        request_id = event.path.strip("/")
+        owner_id = snapshot.get("ownerId")
+        city = snapshot.get("city", "")
+
+        # إرسال إشعار للاعب إذا المدينة مطابقة
+        if owner_id and city:
+            token = db.reference(f"players/{owner_id}/token").get()
+            if token:
+                messaging.send(messaging.Message(
+                    notification=messaging.Notification(
+                        title="طلب جديد",
+                        body=f"هناك طلب جديد في {city}"
+                    ),
+                    token=token,
+                    data={"reqId": request_id}
+                ))
+
+        # إرسال إشعارات لكل من قبل/رفض
+        for child_type in ["playeraccepted", "rejects"]:
+            children = snapshot.get(child_type, {})
+            for uid in children:
+                token = db.reference(f"players/{uid}/token").get()
+                if token:
+                    action_text = "قام بقبول طلبك ✅" if child_type == "playeraccepted" else "قام برفض طلبك ❌"
+                    messaging.send(messaging.Message(
+                        notification=messaging.Notification(
+                            title="تحديث طلب",
+                            body=action_text
+                        ),
+                        token=token,
+                        data={"reqId": request_id}
+                    ))
+
+    ref.listen(listener)
+
+# تشغيل المراقب في Thread مستقل
+threading.Thread(target=monitor_requests, daemon=True).start()
