@@ -126,6 +126,9 @@ app = FastAPI(lifespan=lifespan)
 def home():
     return {"message": "server running, worker active"}
 
+@app.head("/")
+def head_home():
+    return {}
 
 @app.post("/send")
 async def send_notification(request: Request):
