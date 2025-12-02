@@ -52,7 +52,7 @@ def poll_requests():
         snapshot = ref.get() or {}
         for req_id, request in snapshot.items():
             city = request.get("city")
-            notified = request.get("notified") or {}
+            # notified = request.get("notified") or {}
 
             players = db.reference("players").get() or {}
             for pid, pdata in players.items():
@@ -64,8 +64,8 @@ def poll_requests():
                 # if time.time() * 1000 - last_accepted < COOLDOWN_HOURS * 3600 * 1000:
                 #     continue
                 # تحقق من عدم الإشعار المكرر
-                if notified.get(pid):
-                    continue
+                # if notified.get(pid):
+                #     continue
                 # إرسال الإشعار
                 token = pdata.get("token")
                 if token:
