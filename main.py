@@ -21,7 +21,7 @@ app.add_middleware(
 service_account_json = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
 cred = credentials.Certificate(json.loads(service_account_json))
 firebase_admin.initialize_app(cred, {
-    "databaseURL": "https://naqesnarabie-default-rtdb.europe-west1.firebasedatabase.app/Requests"
+    "databaseURL": "https://naqesnarabie-default-rtdb.europe-west1.firebasedatabase.app/"
 })
 
 COOLDOWN_HOURS = 1.0  # ساعة واحدة
@@ -60,9 +60,9 @@ def poll_requests():
                 if pdata.get("city") != city:
                     continue
                 # تحقق من cooldown
-                last_accepted = get_player_last_accepted(pid)
-                if time.time() * 1000 - last_accepted < COOLDOWN_HOURS * 3600 * 1000:
-                    continue
+                # last_accepted = get_player_last_accepted(pid)
+                # if time.time() * 1000 - last_accepted < COOLDOWN_HOURS * 3600 * 1000:
+                #     continue
                 # تحقق من عدم الإشعار المكرر
                 if notified.get(pid):
                     continue
